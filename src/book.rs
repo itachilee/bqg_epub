@@ -53,10 +53,9 @@ impl Chapter {
         //     .create(true)
         //     .open(file_name).unwrap();
 
-        let cleaned = replace_html_entities(&content);
         // file.write(cleaned.as_bytes()).unwrap();
 
-        self.content = cleaned;
+        self.content = replace_html_entities(&content);;
         Ok(())
     }
 }
@@ -225,5 +224,22 @@ impl Book {
 
 
         Ok(())
+    }
+
+
+    pub async fn start_scrape(&mut self)-> Result<()>{
+
+        let client = Client::builder()
+            .build()?;
+        self.get_book_info(&client).await.unwrap();
+
+        self.scraper_chapter(&client).await?;
+
+        self.generate_epub()?;
+        Ok(())
+    }
+
+    pub  fn print_info(&self) {
+        println!("{:?}", self);
     }
 }
