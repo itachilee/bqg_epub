@@ -55,7 +55,7 @@ impl Chapter {
 
         // file.write(cleaned.as_bytes()).unwrap();
 
-        self.content = replace_html_entities(&content);;
+        self.content = replace_html_entities(&content);
         Ok(())
     }
 }
@@ -117,15 +117,11 @@ impl Book {
         self.title = document.select(&title_selector).next().unwrap().text().collect::<Vec<_>>().join(" ");
 
 
-        let mut count =0;
         for element in document.select(&chapter_selector) {
             if let Some(href) = element.value().attr("href") {
                 let text = element.text().collect::<Vec<_>>().join(" ");
 
-                if count >=3{
-                    break
-                }
-                count +=1;
+
                 println!("{} | {}", href, text);
                 self.add_chapter(Chapter::new(href, &text));
             }
