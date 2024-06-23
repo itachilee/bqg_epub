@@ -18,7 +18,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
     let mut book = Book::new(&args.url);
-    book.start_scrape()?;
+    book.start_scrape().await?;
     Ok(())
 }
 

@@ -1,13 +1,16 @@
 use std::cmp::Ordering;
 use std::fs::{File, OpenOptions, read};
-use std::io::Read;
+use std::io::{Read, Write};
+use std::path::Path;
+use std::sync::Arc;
 use epub_builder::{EpubBuilder, EpubContent, ReferenceType, ZipLibrary, Result};
+use futures::future;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use url::Url;
-use crate::util::{random_delay, replace_html_entities};
+use crate::util::{check_and_create_directory, random_delay, replace_html_entities};
 
-#[derive(Eq, Debug)]
+#[derive(Eq, Debug,Clone)]
 pub struct Chapter {
     pub number: usize,
     pub href: String,
@@ -26,12 +29,18 @@ impl Chapter {
         }
     }
 
-    pub async fn scraper_chapter_content(&mut self, base_url: &str, client: &Client) -> Result<()> {
+
+    pub fn update_content(&mut self,new_content: &str) ->Self{
+        self.content = new_content.to_string();
+        self.to_owned()
+    }
+
+    pub async fn scraper_chapter_content(&mut self, base_url: &str) -> Result<Self> {
         let base_url = Url::parse(base_url)?;
         let joined_url = base_url.join(&self.href)?;
 
         println!("now visited: {}", joined_url);
-
+        let client = Client::new();
         let page = client.get(joined_url).send().await?.text().await?;
         let document = Html::parse_document(&page);
         let content_selector = Selector::parse("#content").unwrap();
@@ -43,19 +52,22 @@ impl Chapter {
             None => { "this chapter may have no content ".to_string() }
         };
 
-        // let file_name = format!("books/{}.txt", self.href.split('.').next().unwrap_or("0").parse::<usize>().unwrap());
-        // let dir_path = Path::new(&file_name).parent().unwrap(); // Get the directory part of the file path
+        // self.content = replace_html_entities(&content);
+        Ok(self.update_content(&replace_html_entities(&content)))
+    }
 
-        // check_and_create_directory(dir_path)?;
-        // let mut file = OpenOptions::new()
-        //     .read(true)
-        //     .write(true)
-        //     .create(true)
-        //     .open(file_name).unwrap();
+    pub fn write_to_file(&self) ->Result<()> {
+        let file_name = format!("books/{}.txt", self.href.split('.').next().unwrap_or("0").parse::<usize>().unwrap());
+        let dir_path = Path::new(&file_name).parent().unwrap(); // Get the directory part of the file path
 
-        // file.write(cleaned.as_bytes()).unwrap();
+        check_and_create_directory(dir_path)?;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(file_name).unwrap();
 
-        self.content = replace_html_entities(&content);
+        file.write(self.content.as_bytes()).unwrap();
         Ok(())
     }
 }
@@ -117,11 +129,15 @@ impl Book {
         self.title = document.select(&title_selector).next().unwrap().text().collect::<Vec<_>>().join(" ");
 
 
+        let mut  count =0;
         for element in document.select(&chapter_selector) {
             if let Some(href) = element.value().attr("href") {
                 let text = element.text().collect::<Vec<_>>().join(" ");
 
-
+                // if count >=3{
+                //     break;
+                // }
+                // count+=1;
                 println!("{} | {}", href, text);
                 self.add_chapter(Chapter::new(href, &text));
             }
@@ -141,20 +157,62 @@ impl Book {
     }
 
 
-    pub async fn scraper_chapter(&mut self, client: &Client) -> Result<()> {
+    pub async fn scraper_chapter(&mut self) -> Result<()> {
         self.chapters.sort();
+        //
+        //
+        // // let client= Client::new();
+        // for chapter in self.chapters.iter_mut() {
+        //     println!("href: {}  | title: {}", chapter.href, chapter.title);
+        //     let delay = random_delay();
+        //     println!("Waiting for {} milliseconds before the next request...", delay.as_millis());
+        //     tokio::time::sleep(delay).await;
+        //     chapter.scraper_chapter_content(&self.homepage).await.unwrap();
+        // }
+
+
+        let mut handles = vec![];
 
         for chapter in self.chapters.iter_mut() {
-            println!("href: {}  | title: {}", chapter.href, chapter.title);
-            let delay = random_delay();
-            println!("Waiting for {} milliseconds before the next request...", delay.as_millis());
-            tokio::time::sleep(delay).await;
-            chapter.scraper_chapter_content(&self.homepage, &client).await.unwrap();
+            let homepage = self.homepage.clone();
+            let mut chapter_ref = chapter.clone();
+            // let mut chapter_ref = Arc::clone(chapter);
+            let handle = tokio::spawn(async move {
+                println!("href: {}  | title: {}", chapter_ref.href, chapter_ref.title);
+                let delay = random_delay();
+                println!("Waiting for {} milliseconds before the next request...", delay.as_millis());
+                tokio::time::sleep(delay).await;
+                chapter_ref.scraper_chapter_content(&homepage).await
+            });
+            handles.push(handle);
         }
+
+        // 等待所有爬取任务完成
+        let results = future::join_all(handles).await;
+        for result in results {
+            match result {
+                Ok(res) => {
+                    if let Ok(c) = res {
+
+                        self.update_chapter_content(&c.href,&c.content);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Task join error: {:?}", e);
+                }
+            }
+        }
+
+        // 所有爬取工作完成后的进一步处理
+        println!("All chapters fetched. Continue to the next step.");
 
         Ok(())
     }
-
+    pub fn update_chapter_content(&mut self, href: &str, new_content: &str) {
+        if let Some(chapter) = self.chapters.iter_mut().find(|chapter| chapter.href == href) {
+            chapter.update_content(new_content);
+        }
+    }
     pub fn generate_epub(&self) -> Result<()> {
         // let mut output = Vec::<u8>::new();
 
@@ -229,8 +287,9 @@ impl Book {
             .build()?;
         self.get_book_info(&client).await.unwrap();
 
-        self.scraper_chapter(&client).await?;
+        self.scraper_chapter().await?;
 
+        // println!("{:?}",self);
         self.generate_epub()?;
         Ok(())
     }
