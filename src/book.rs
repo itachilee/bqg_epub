@@ -157,22 +157,12 @@ impl Book {
     }
 
 
+    /// crawl page content
     pub async fn scraper_chapter(&mut self) -> Result<()> {
         self.chapters.sort();
-        //
-        //
-        // // let client= Client::new();
-        // for chapter in self.chapters.iter_mut() {
-        //     println!("href: {}  | title: {}", chapter.href, chapter.title);
-        //     let delay = random_delay();
-        //     println!("Waiting for {} milliseconds before the next request...", delay.as_millis());
-        //     tokio::time::sleep(delay).await;
-        //     chapter.scraper_chapter_content(&self.homepage).await.unwrap();
-        // }
 
-
+        // todo: scraper may fail,so should add retry check in `scraper_chapter_content`
         let mut handles = vec![];
-
         for chapter in self.chapters.iter_mut() {
             let homepage = self.homepage.clone();
             let mut chapter_ref = chapter.clone();
