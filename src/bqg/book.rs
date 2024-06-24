@@ -8,7 +8,7 @@ use futures::future;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use url::Url;
-use crate::util::{check_and_create_directory, random_delay, replace_html_entities};
+use crate::util::{check_and_create_directory, default_headers, random_delay, replace_html_entities};
 
 #[derive(Eq, Debug,Clone)]
 pub struct Chapter {
@@ -35,12 +35,12 @@ impl Chapter {
         self.to_owned()
     }
 
-    pub async fn scraper_chapter_content(&mut self, base_url: &str) -> Result<Self> {
+    pub async fn scraper_chapter_content(&mut self, base_url: &str,client: &Client) -> Result<Self> {
         let base_url = Url::parse(base_url)?;
         let joined_url = base_url.join(&self.href)?;
 
         println!("now visited: {}", joined_url);
-        let client = Client::new();
+
         let page = client.get(joined_url).send().await?.text().await?;
         let document = Html::parse_document(&page);
         let content_selector = Selector::parse("#content").unwrap();
@@ -114,13 +114,13 @@ impl Book {
 
 
     pub async fn get_book_info(&mut self, client: &Client) -> epub_builder::Result<()> {
+        println!("visiting homepage: {} ...", &self.homepage);
         let html = client.get(&self.homepage).send().await?.text().await?;
-        println!("scraper homepage: {} start...", &self.homepage);
 
-        // let mut chapters = vec![];
+        println!("{}",html);
         let document = Html::parse_document(&html);
         let chapter_selector = Selector::parse("#list > dl > dd > a").unwrap();
-        let author_selector = Selector::parse("#info > p:nth-child(2) > a").unwrap();
+        let author_selector = Selector::parse("#info > p > a").unwrap();
         let intro_selector = Selector::parse("#intro").unwrap();
         let title_selector = Selector::parse("#info > h1").unwrap();
 
@@ -134,10 +134,10 @@ impl Book {
             if let Some(href) = element.value().attr("href") {
                 let text = element.text().collect::<Vec<_>>().join(" ");
 
-                // if count >=3{
-                //     break;
-                // }
-                // count+=1;
+                if count >=3{
+                    break;
+                }
+                count+=1;
                 println!("{} | {}", href, text);
                 self.add_chapter(Chapter::new(href, &text));
             }
@@ -158,7 +158,7 @@ impl Book {
 
 
     /// crawl page content
-    pub async fn scraper_chapter(&mut self) -> Result<()> {
+    pub async fn scraper_chapter(&mut self,client: &Client) -> Result<()> {
         self.chapters.sort();
 
         // todo: scraper may fail,so should add retry check in `scraper_chapter_content`
@@ -167,12 +167,13 @@ impl Book {
             let homepage = self.homepage.clone();
             let mut chapter_ref = chapter.clone();
             // let mut chapter_ref = Arc::clone(chapter);
+            let client = client.clone();
             let handle = tokio::spawn(async move {
                 println!("href: {}  | title: {}", chapter_ref.href, chapter_ref.title);
                 let delay = random_delay();
                 println!("Waiting for {} milliseconds before the next request...", delay.as_millis());
                 tokio::time::sleep(delay).await;
-                chapter_ref.scraper_chapter_content(&homepage).await
+                chapter_ref.scraper_chapter_content(&homepage,&client).await
             });
             handles.push(handle);
         }
@@ -272,15 +273,16 @@ impl Book {
 
 
     pub async fn start_scrape(&mut self)-> Result<()>{
-
         let client = Client::builder()
+            // .default_headers(default_headers())
             .build()?;
+
         self.get_book_info(&client).await.unwrap();
 
-        self.scraper_chapter().await?;
+        self.scraper_chapter(&client).await?;
 
-        // println!("{:?}",self);
-        self.generate_epub()?;
+        println!("{:?}",self);
+        // self.generate_epub()?;
         Ok(())
     }
 
