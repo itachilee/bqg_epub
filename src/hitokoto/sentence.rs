@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 use std::io::{BufReader, Result};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use rand::Rng;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

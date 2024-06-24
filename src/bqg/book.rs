@@ -1,14 +1,14 @@
 use std::cmp::Ordering;
-use std::fs::{File, OpenOptions, read};
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Arc;
+
 use epub_builder::{EpubBuilder, EpubContent, ReferenceType, ZipLibrary, Result};
 use futures::future;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use url::Url;
-use crate::util::{check_and_create_directory, default_headers, random_delay, replace_html_entities};
+use crate::util::{check_and_create_directory, random_delay, replace_html_entities};
 
 #[derive(Eq, Debug,Clone)]
 pub struct Chapter {
