@@ -1,3 +1,4 @@
+use std::any::Any;
 use epub_builder::Result;
 use clap::Parser;
 use bqg_epub::bqg::book::Book;
@@ -33,4 +34,43 @@ async fn run(args: &Args) -> Result<()> {
         random_sentence(&args.hitokoto.clone().unwrap());
     }
     Ok(())
+}
+
+
+
+trait MyTrait {
+    fn trait_hello(&self);
+    fn as_any(&self) -> &dyn Any;
+}
+struct MyStruct1;
+
+impl MyStruct1 {
+    fn struct_hello(&self) {
+        println!("Hello, world! from MyStruct1");
+    }
+}
+
+struct MyStruct2;
+
+impl crate::MyStruct2 {
+    fn struct_hello(&self) {
+        println!("Hello, world! from MyStruct1");
+    }
+}
+impl MyTrait for MyStruct1 {
+    fn trait_hello(&self) {
+        self.struct_hello();
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl MyTrait for MyStruct2 {
+    fn trait_hello(&self) {
+        self.struct_hello();
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
